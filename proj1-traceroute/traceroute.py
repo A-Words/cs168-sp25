@@ -38,7 +38,19 @@ class IPv4:
     dst: str
 
     def __init__(self, buffer: bytes):
-        pass  # TODO
+        b = ''.join(format(byte, '08b') for byte in [*buffer])
+        self.version = int(b[0:4], 2)
+        self.header_len = int(b[4:8], 2) * 4
+        self.tos = int.from_bytes(buffer[1:2], "big")
+        self.length = int.from_bytes(buffer[2:4], "big")
+        self.id = int.from_bytes(buffer[4:6], "big")
+        self.flags = int(b[48:51], 2)
+        self.frag_offset = int(b[51:64], 2)
+        self.ttl = int.from_bytes(buffer[8:9], "big")
+        self.proto = int.from_bytes(buffer[9:10], "big")
+        self.cksum = int.from_bytes(buffer[10:12], "big")
+        self.src = util.inet_ntoa(buffer[12:16])
+        self.dst = util.inet_ntoa(buffer[16:20])
 
     def __str__(self) -> str:
         return f"IPv{self.version} (tos 0x{self.tos:x}, ttl {self.ttl}, " + \
@@ -60,7 +72,9 @@ class ICMP:
     cksum: int
 
     def __init__(self, buffer: bytes):
-        pass  # TODO
+        self.type = int.from_bytes(buffer[0:1], "big")
+        self.code = int.from_bytes(buffer[1:2], "big")
+        self.cksum = int.from_bytes(buffer[2:4], "big")
 
     def __str__(self) -> str:
         return f"ICMP (type {self.type}, code {self.code}, " + \
@@ -79,7 +93,10 @@ class UDP:
     cksum: int
 
     def __init__(self, buffer: bytes):
-        pass  # TODO
+        self.src_port = int.from_bytes(buffer[0:2], "big")
+        self.dst_port = int.from_bytes(buffer[2:4], "big")
+        self.len = int.from_bytes(buffer[4:6], "big")
+        self.cksum = int.from_bytes(buffer[6:8], "big")
 
     def __str__(self) -> str:
         return f"UDP (src_port {self.src_port}, dst_port {self.dst_port}, " + \
@@ -107,10 +124,29 @@ def traceroute(sendsock: util.Socket, recvsock: util.Socket, ip: str) \
     should be included as the final element in the list.
     """
 
-    # TODO Add your implementation
+    MSG = "Traceroute test message"
+    routers = [[] for _ in range(TRACEROUTE_MAX_TTL)]
+
     for ttl in range(1, TRACEROUTE_MAX_TTL+1):
-        util.print_result([], ttl)
-    return []
+        sendsock.set_ttl(ttl)
+        subrouters = set()
+
+        for _ in range(PROBE_ATTEMPT_COUNT):
+            sendsock.sendto(MSG.encode(), (ip, TRACEROUTE_PORT_NUMBER))
+            if recvsock.recv_select():
+                buf, address = recvsock.recvfrom()
+                if address[0] == ip:
+                    subrouters = {ip}
+                    break
+                subrouters.add(address[0])
+                
+        routers[ttl-1] = list(subrouters)
+        util.print_result(list(subrouters), ttl)
+        
+        if ip in subrouters:
+            return routers[:ttl]
+
+    return routers
 
 
 if __name__ == '__main__':
